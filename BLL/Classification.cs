@@ -11,17 +11,18 @@ namespace RemoteSensingProcessor.BLL
         {
             int[] bandIndices = Enumerable.Range(1, info.BandCount).ToArray();
             int scaleFactor = info.Width * info.Height > 10000000 ? 4 : info.Width * info.Height > 5000000 ? 2 : 1;
-            int sampleWidth = info.Width / scaleFactor;
-            int sampleHeight = info.Height / scaleFactor;
-            float[][] bands = _dal.ReadMultiBandData(info.FilePath, bandIndices, 0, 0, sampleWidth, sampleHeight);
+            int sampleWidth = (info.Width + scaleFactor - 1) / scaleFactor;
+            int sampleHeight = (info.Height + scaleFactor - 1) / scaleFactor;
+            float[][] bands = _dal.ReadMultiBandDataSubsampled(info.FilePath, bandIndices, info.Width, info.Height, scaleFactor);
             int numPixels = sampleWidth * sampleHeight;
             int numBands = info.BandCount;
 
             bool[] validMask = new bool[numPixels];
             int validCount = 0;
+            double[] noDataValues = info.Bands.Take(numBands).Select(b => b.NoDataValue).ToArray();
             for (int i = 0; i < numPixels; i++)
             {
-                validMask[i] = IsValidPixel(bands, i, info, numBands);
+                validMask[i] = !BitmapHelper.IsInvalidBackgroundPixel(bands, i, noDataValues);
                 if (validMask[i]) validCount++;
             }
             if (validCount < numClusters)
@@ -55,15 +56,30 @@ namespace RemoteSensingProcessor.BLL
             for (int i = 0; i < numPixels; i++)
                 sampleClasses[i] = validMask[i] ? validClasses[vi++] : -1;
 
-            int[] fullSizeClasses = ScaleUpClasses(sampleClasses, sampleWidth, sampleHeight, info.Width, info.Height);
+            int[] fullSizeClasses = ScaleUpClasses(sampleClasses, sampleWidth, sampleHeight, info.Width, info.Height, scaleFactor);
+            ApplyFullResolutionValidMask(fullSizeClasses, info, bandIndices, noDataValues);
             return (RenderClassification(fullSizeClasses, info.Width, info.Height), fullSizeClasses);
         }
 
-        private bool IsValidPixel(float[][] bands, int idx, ImageInfo info, int numBands)
+        private void ApplyFullResolutionValidMask(int[] classes, ImageInfo info, int[] bandIndices, double[] noDataValues)
         {
-            for (int b = 0; b < numBands; b++)
-                if (BitmapHelper.IsNoData(bands[b][idx], info.Bands[b].NoDataValue)) return false;
-            return true;
+            int blockSize = 256;
+            int numBands = bandIndices.Length;
+            for (int y = 0; y < info.Height; y += blockSize)
+            {
+                int rows = Math.Min(blockSize, info.Height - y);
+                float[][] blockBands = _dal.ReadMultiBandData(info.FilePath, bandIndices, 0, y, info.Width, rows);
+                for (int blockY = 0; blockY < rows; blockY++)
+                {
+                    for (int x = 0; x < info.Width; x++)
+                    {
+                        int idx = (y + blockY) * info.Width + x;
+                        int blockIdx = blockY * info.Width + x;
+                        if (BitmapHelper.IsInvalidBackgroundPixelAt(blockBands, blockIdx, numBands, noDataValues))
+                            classes[idx] = -1;
+                    }
+                }
+            }
         }
 
         private float[][] MinMaxNormalize(float[][] pixels, int numPixels, int numBands)
@@ -150,16 +166,18 @@ namespace RemoteSensingProcessor.BLL
             return true;
         }
 
-        private int[] ScaleUpClasses(int[] classes, int sampleWidth, int sampleHeight, int fullWidth, int fullHeight)
+        private static int[] ScaleUpClasses(int[] classes, int sampleWidth, int sampleHeight, int fullWidth, int fullHeight, int scaleFactor)
         {
             int[] fullSizeClasses = new int[fullWidth * fullHeight];
             for (int y = 0; y < fullHeight; y++)
+            {
+                int srcY = Math.Min(y / scaleFactor, sampleHeight - 1);
                 for (int x = 0; x < fullWidth; x++)
                 {
-                    int srcX = Math.Min(x * sampleWidth / fullWidth, sampleWidth - 1);
-                    int srcY = Math.Min(y * sampleHeight / fullHeight, sampleHeight - 1);
+                    int srcX = Math.Min(x / scaleFactor, sampleWidth - 1);
                     fullSizeClasses[y * fullWidth + x] = classes[srcY * sampleWidth + srcX];
                 }
+            }
             return fullSizeClasses;
         }
 
@@ -178,10 +196,19 @@ namespace RemoteSensingProcessor.BLL
                     for (int x = 0; x < width; x++)
                     {
                         int idx = y * width + x;
-                        if (classes[idx] < 0) { row[x * 3] = 0; row[x * 3 + 1] = 0; row[x * 3 + 2] = 0; continue; }
+                        if (classes[idx] < 0)
+                        {
+                            row[x * 3] = 0;
+                            row[x * 3 + 1] = 0;
+                            row[x * 3 + 2] = 0;
+                            continue;
+                        }
                         Color color = classColors[classes[idx] % classColors.Length];
-                        row[x * 3] = color.B; row[x * 3 + 1] = color.G; row[x * 3 + 2] = color.R;
+                        row[x * 3] = color.B;
+                        row[x * 3 + 1] = color.G;
+                        row[x * 3 + 2] = color.R;
                     }
+                    BitmapHelper.ClearRowPadding(row, width, BitmapHelper.RgbBytesPerPixel, stride);
                 }
             }
             bitmap.UnlockBits(dstData);

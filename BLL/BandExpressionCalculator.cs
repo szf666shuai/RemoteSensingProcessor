@@ -7,7 +7,7 @@ namespace RemoteSensingProcessor.BLL
     {
         private readonly GdalDataAccess _dal = new();
 
-        public Bitmap CalculateExpression(ImageInfo info, string expression)
+        public Bitmap CalculateExpression(ImageInfo info, string expression, IndexDisplayMode displayMode = IndexDisplayMode.Pseudocolor)
         {
             expression = expression.Trim().ToUpper();
             var tokens = Tokenize(expression);
@@ -47,9 +47,8 @@ namespace RemoteSensingProcessor.BLL
                 result[pixel] = EvaluatePostfix(postfix, values);
             }
             
-            float minVal = result.Min();
-            float maxVal = result.Max();
-            return RenderIndex(result, info.Width, info.Height, minVal, maxVal);
+            var (minVal, maxVal) = BitmapHelper.GetValidPercentileRange(result);
+            return IndexRenderer.Render(result, info.Width, info.Height, minVal, maxVal, displayMode, IndexColorScheme.Vegetation);
         }
 
         private List<string> Tokenize(string expression)
@@ -231,55 +230,6 @@ namespace RemoteSensingProcessor.BLL
             }
             
             return stack.Count > 0 ? stack.Pop() : 0;
-        }
-
-        private Bitmap RenderIndex(float[] data, int width, int height, float minVal, float maxVal)
-        {
-            Bitmap bitmap = new(width, height, System.Drawing.Imaging.PixelFormat.Format24bppRgb);
-            var bmpData = bitmap.LockBits(new System.Drawing.Rectangle(0, 0, width, height),
-                System.Drawing.Imaging.ImageLockMode.WriteOnly, bitmap.PixelFormat);
-            
-            float range = maxVal - minVal;
-            if (range < 1e-6f) range = 1;
-            
-            unsafe
-            {
-                byte* ptr = (byte*)bmpData.Scan0;
-                int stride = bmpData.Stride;
-                
-                for (int y = 0; y < height; y++)
-                {
-                    byte* row = ptr + y * stride;
-                    for (int x = 0; x < width; x++)
-                    {
-                        float normalized = (data[y * width + x] - minVal) / range;
-                        normalized = Math.Clamp(normalized, 0, 1);
-                        
-                        byte r, g, b;
-                        if (normalized <= 0.5f)
-                        {
-                            float t = normalized * 2;
-                            r = (byte)(60 + 195 * t);
-                            g = (byte)(80 + 175 * t);
-                            b = (byte)(200 + 55 * t);
-                        }
-                        else
-                        {
-                            float t = (normalized - 0.5f) * 2;
-                            r = (byte)(255 - 205 * t);
-                            g = (byte)(255 - 20 * t);
-                            b = (byte)(255 - 200 * t);
-                        }
-                        
-                        row[x * 3] = b;
-                        row[x * 3 + 1] = g;
-                        row[x * 3 + 2] = r;
-                    }
-                }
-            }
-            
-            bitmap.UnlockBits(bmpData);
-            return bitmap;
         }
     }
 }

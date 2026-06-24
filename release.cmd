@@ -3,7 +3,7 @@ setlocal
 
 set "PROJECT=%~dp0"
 set "REPO_NAME=RemoteSensingProcessor"
-set "VERSION=v1.0.0"
+set "VERSION=v1.1.0"
 set "ZIP=%PROJECT%dist\RemoteSensingProcessor-win-x64.zip"
 
 echo === 1. Publish ===

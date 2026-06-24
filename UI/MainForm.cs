@@ -24,6 +24,9 @@ namespace RemoteSensingProcessor.UI
         private Point _lastMousePos;
         private ToolStripProgressBar? _progressBar;
 
+        private IndexDisplayMode IndexDisplayMode =>
+            menuItemIndexGrayscaleDisplay.Checked ? Model.IndexDisplayMode.Grayscale : Model.IndexDisplayMode.Pseudocolor;
+
         public MainForm()
         {
             InitializeComponent();
@@ -469,7 +472,7 @@ namespace RemoteSensingProcessor.UI
         }
 
         private void menuItemLinearStretch_Click(object sender, EventArgs e) =>
-            ApplyImageOperation(info => _basicOps.ApplyLinearStretchFromImage(info), "2%线性拉伸");
+            ApplyOperation(b => _basicOps.ApplyLinearStretch(b), "2%线性拉伸");
         private void menuItemInvert_Click(object sender, EventArgs e) => ApplyOperation(b => _basicOps.Invert(b), "影像取反");
 
         private void menuItemBrightnessContrast_Click(object sender, EventArgs e)
@@ -537,7 +540,7 @@ namespace RemoteSensingProcessor.UI
                         return;
                     }
 
-                    Bitmap newBitmap = _vegIndices.CalculateNDVI(_currentImage, nirBand, redBand);
+                    Bitmap newBitmap = _vegIndices.CalculateNDVI(_currentImage, nirBand, redBand, IndexDisplayMode);
                     _currentBitmap?.Dispose();
                     _currentBitmap = newBitmap;
                     _cache.Record(newBitmap);
@@ -584,7 +587,7 @@ namespace RemoteSensingProcessor.UI
                         return;
                     }
 
-                    Bitmap newBitmap = _vegIndices.CalculateEVI(_currentImage, nirBand, redBand, blueBand);
+                    Bitmap newBitmap = _vegIndices.CalculateEVI(_currentImage, nirBand, redBand, blueBand, IndexDisplayMode);
                     _currentBitmap?.Dispose();
                     _currentBitmap = newBitmap;
                     _cache.Record(newBitmap);
@@ -628,7 +631,7 @@ namespace RemoteSensingProcessor.UI
                         return;
                     }
 
-                    Bitmap newBitmap = _vegIndices.CalculateSAVI(_currentImage, nirBand, redBand);
+                    Bitmap newBitmap = _vegIndices.CalculateSAVI(_currentImage, nirBand, redBand, displayMode: IndexDisplayMode);
                     _currentBitmap?.Dispose();
                     _currentBitmap = newBitmap;
                     _cache.Record(newBitmap);
@@ -672,7 +675,7 @@ namespace RemoteSensingProcessor.UI
                         return;
                     }
 
-                    Bitmap newBitmap = _vegIndices.CalculateMSAVI(_currentImage, nirBand, redBand);
+                    Bitmap newBitmap = _vegIndices.CalculateMSAVI(_currentImage, nirBand, redBand, IndexDisplayMode);
                     _currentBitmap?.Dispose();
                     _currentBitmap = newBitmap;
                     _cache.Record(newBitmap);
@@ -716,7 +719,7 @@ namespace RemoteSensingProcessor.UI
                         return;
                     }
 
-                    Bitmap newBitmap = _objIndices.CalculateNDWI(_currentImage, greenBand, nirBand);
+                    Bitmap newBitmap = _objIndices.CalculateNDWI(_currentImage, greenBand, nirBand, IndexDisplayMode);
                     _currentBitmap?.Dispose();
                     _currentBitmap = newBitmap;
                     _cache.Record(newBitmap);
@@ -760,7 +763,7 @@ namespace RemoteSensingProcessor.UI
                         return;
                     }
 
-                    Bitmap newBitmap = _objIndices.CalculateMNDWI(_currentImage, greenBand, swirBand);
+                    Bitmap newBitmap = _objIndices.CalculateMNDWI(_currentImage, greenBand, swirBand, IndexDisplayMode);
                     _currentBitmap?.Dispose();
                     _currentBitmap = newBitmap;
                     _cache.Record(newBitmap);
@@ -804,7 +807,7 @@ namespace RemoteSensingProcessor.UI
                         return;
                     }
 
-                    Bitmap newBitmap = _objIndices.CalculateNDBI(_currentImage, swirBand, nirBand);
+                    Bitmap newBitmap = _objIndices.CalculateNDBI(_currentImage, swirBand, nirBand, IndexDisplayMode);
                     _currentBitmap?.Dispose();
                     _currentBitmap = newBitmap;
                     _cache.Record(newBitmap);
@@ -847,7 +850,7 @@ namespace RemoteSensingProcessor.UI
                 Cursor = Cursors.WaitCursor;
                 try
                 {
-                    Bitmap newBitmap = await Task.Run(() => _bandExprCalc.CalculateExpression(_currentImage, expression));
+                    Bitmap newBitmap = await Task.Run(() => _bandExprCalc.CalculateExpression(_currentImage, expression, IndexDisplayMode));
                     _currentBitmap?.Dispose();
                     _currentBitmap = newBitmap;
                     _cache.Record(newBitmap);
@@ -872,6 +875,7 @@ namespace RemoteSensingProcessor.UI
         private void menuItemGaussianFilter_Click(object sender, EventArgs e) => ApplyOperation(b => _enhancement.ApplyGaussianFilter(b), "高斯滤波");
         private void menuItemLaplacian_Click(object sender, EventArgs e) => ApplyOperation(b => _enhancement.ApplyLaplacianSharpening(b), "拉普拉斯锐化");
         private void menuItemSobelEdge_Click(object sender, EventArgs e) => ApplyOperation(b => _enhancement.ApplySobelEdge(b), "Sobel边缘检测");
+        private void menuItemCannyEdge_Click(object sender, EventArgs e) => ApplyOperation(b => _enhancement.ApplyCannyEdge(b), "Canny边缘检测");
 
         private async void menuItemDensitySlice_Click(object sender, EventArgs e)
         {
@@ -906,36 +910,8 @@ namespace RemoteSensingProcessor.UI
             }
         }
 
-        private void menuItemKMeans_Click(object sender, EventArgs e)
-        {
-            if (_currentImage == null)
-            {
-                MessageBox.Show("请先打开影像", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                return;
-            }
-
-            Cursor = Cursors.WaitCursor;
-            try
-            {
-                var result = _classification.KMeansClassification(_currentImage, 4);
-                _currentBitmap?.Dispose();
-                _currentBitmap = result.result;
-                _cache.Record(result.result);
-                
-                _zoom = 1.0;
-                _panOffset = Point.Empty;
-                pictureBox1.Invalidate();
-                MessageBox.Show("K-Means分类完成！\n蓝色-水体, 绿色-植被, 红色-建筑, 黄色-裸土", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"K-Means分类失败: {ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-            finally
-            {
-                Cursor = Cursors.Default;
-            }
-        }
+        private void menuItemKMeans_Click(object sender, EventArgs e) =>
+            ApplyImageOperation(info => _classification.KMeansClassification(info, 4).result, "K-Means分类");
 
         private void menuItemUndo_Click(object sender, EventArgs e)
         {
@@ -1020,6 +996,13 @@ namespace RemoteSensingProcessor.UI
         private void toolStripButtonZoomOut_Click(object sender, EventArgs e) => menuItemZoomOut_Click(sender, e);
         private void toolStripButtonFit_Click(object sender, EventArgs e) => menuItemZoomFit_Click(sender, e);
         private void toolStripButtonStretch_Click(object sender, EventArgs e) => menuItemLinearStretch_Click(sender, e);
+        private void menuItemIndexGrayscaleDisplay_Click(object sender, EventArgs e)
+        {
+            toolStripStatusLabel7.Text = menuItemIndexGrayscaleDisplay.Checked
+                ? "指数显示: 灰度（ENVI风格）"
+                : "指数显示: 伪彩色";
+        }
+
         private void toolStripButtonNDVI_Click(object sender, EventArgs e) => menuItemNDVI_Click(sender, e);
         private void toolStripButtonFilter_Click(object sender, EventArgs e) => menuItemMeanFilter_Click(sender, e);
         private void toolStripButtonUndo_Click(object sender, EventArgs e) => menuItemUndo_Click(sender, e);

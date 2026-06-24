@@ -127,6 +127,39 @@ namespace RemoteSensingProcessor.DAL
             
             return result;
         }
+
+        /// <summary>
+        /// 按步长在全图范围内均匀采样，避免只读取左上角导致分类结果缺失。
+        /// </summary>
+        public float[][] ReadMultiBandDataSubsampled(string filePath, int[] bandIndices, int fullWidth, int fullHeight, int scaleFactor)
+        {
+            int sampleWidth = (fullWidth + scaleFactor - 1) / scaleFactor;
+            int sampleHeight = (fullHeight + scaleFactor - 1) / scaleFactor;
+            float[][] result = new float[bandIndices.Length][];
+            for (int i = 0; i < bandIndices.Length; i++)
+                result[i] = new float[sampleWidth * sampleHeight];
+
+            using Dataset dataset = Gdal.Open(filePath, Access.GA_ReadOnly);
+            float[] rowBuffer = new float[fullWidth];
+
+            for (int i = 0; i < bandIndices.Length; i++)
+            {
+                using Band band = dataset.GetRasterBand(bandIndices[i]);
+                for (int sy = 0; sy < sampleHeight; sy++)
+                {
+                    int y = Math.Min(sy * scaleFactor, fullHeight - 1);
+                    band.ReadRaster(0, y, fullWidth, 1, rowBuffer, fullWidth, 1, 0, 0);
+                    int rowOffset = sy * sampleWidth;
+                    for (int sx = 0; sx < sampleWidth; sx++)
+                    {
+                        int x = Math.Min(sx * scaleFactor, fullWidth - 1);
+                        result[i][rowOffset + sx] = rowBuffer[x];
+                    }
+                }
+            }
+
+            return result;
+        }
         
         public void SaveImage(string filePath, float[] data, int width, int height, GeoTransform transform, string projection)
         {

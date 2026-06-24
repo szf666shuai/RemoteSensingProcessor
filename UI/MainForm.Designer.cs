@@ -44,12 +44,15 @@ namespace RemoteSensingProcessor.UI
             this.menuItemNDBI = new System.Windows.Forms.ToolStripMenuItem();
             this.toolStripSeparator11 = new System.Windows.Forms.ToolStripSeparator();
             this.menuItemBandExpression = new System.Windows.Forms.ToolStripMenuItem();
+            this.toolStripSeparator12 = new System.Windows.Forms.ToolStripSeparator();
+            this.menuItemIndexGrayscaleDisplay = new System.Windows.Forms.ToolStripMenuItem();
             this.menuItemEnhancement = new System.Windows.Forms.ToolStripMenuItem();
             this.menuItemMeanFilter = new System.Windows.Forms.ToolStripMenuItem();
             this.menuItemGaussianFilter = new System.Windows.Forms.ToolStripMenuItem();
             this.toolStripSeparator5 = new System.Windows.Forms.ToolStripSeparator();
             this.menuItemLaplacian = new System.Windows.Forms.ToolStripMenuItem();
             this.menuItemSobelEdge = new System.Windows.Forms.ToolStripMenuItem();
+            this.menuItemCannyEdge = new System.Windows.Forms.ToolStripMenuItem();
             this.toolStripSeparator6 = new System.Windows.Forms.ToolStripSeparator();
             this.menuItemDensitySlice = new System.Windows.Forms.ToolStripMenuItem();
             this.menuItemClassification = new System.Windows.Forms.ToolStripMenuItem();
@@ -212,7 +215,9 @@ namespace RemoteSensingProcessor.UI
             this.menuItemMNDWI,
             this.menuItemNDBI,
             this.toolStripSeparator11,
-            this.menuItemBandExpression});
+            this.menuItemBandExpression,
+            this.toolStripSeparator12,
+            this.menuItemIndexGrayscaleDisplay});
             this.menuItemIndices.Name = "menuItemIndices";
             this.menuItemIndices.Size = new System.Drawing.Size(63, 20);
             this.menuItemIndices.Text = "指数计算";
@@ -263,12 +268,22 @@ namespace RemoteSensingProcessor.UI
             this.menuItemBandExpression.Text = "波段表达式计算";
             this.menuItemBandExpression.Click += new System.EventHandler(this.menuItemBandExpression_Click);
             
+            this.toolStripSeparator12.Name = "toolStripSeparator12";
+            this.toolStripSeparator12.Size = new System.Drawing.Size(177, 6);
+            
+            this.menuItemIndexGrayscaleDisplay.Name = "menuItemIndexGrayscaleDisplay";
+            this.menuItemIndexGrayscaleDisplay.Size = new System.Drawing.Size(180, 22);
+            this.menuItemIndexGrayscaleDisplay.Text = "指数灰度显示（ENVI风格）";
+            this.menuItemIndexGrayscaleDisplay.CheckOnClick = true;
+            this.menuItemIndexGrayscaleDisplay.Click += new System.EventHandler(this.menuItemIndexGrayscaleDisplay_Click);
+            
             this.menuItemEnhancement.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] {
             this.menuItemMeanFilter,
             this.menuItemGaussianFilter,
             this.toolStripSeparator5,
             this.menuItemLaplacian,
             this.menuItemSobelEdge,
+            this.menuItemCannyEdge,
             this.toolStripSeparator6,
             this.menuItemDensitySlice});
             this.menuItemEnhancement.Name = "menuItemEnhancement";
@@ -297,6 +312,11 @@ namespace RemoteSensingProcessor.UI
             this.menuItemSobelEdge.Size = new System.Drawing.Size(160, 22);
             this.menuItemSobelEdge.Text = "Sobel边缘检测";
             this.menuItemSobelEdge.Click += new System.EventHandler(this.menuItemSobelEdge_Click);
+            
+            this.menuItemCannyEdge.Name = "menuItemCannyEdge";
+            this.menuItemCannyEdge.Size = new System.Drawing.Size(160, 22);
+            this.menuItemCannyEdge.Text = "Canny边缘检测";
+            this.menuItemCannyEdge.Click += new System.EventHandler(this.menuItemCannyEdge_Click);
             
             this.toolStripSeparator6.Name = "toolStripSeparator6";
             this.toolStripSeparator6.Size = new System.Drawing.Size(157, 6);
@@ -586,12 +606,15 @@ namespace RemoteSensingProcessor.UI
         private System.Windows.Forms.ToolStripMenuItem menuItemNDBI;
         private System.Windows.Forms.ToolStripSeparator toolStripSeparator11;
         private System.Windows.Forms.ToolStripMenuItem menuItemBandExpression;
+        private System.Windows.Forms.ToolStripSeparator toolStripSeparator12;
+        private System.Windows.Forms.ToolStripMenuItem menuItemIndexGrayscaleDisplay;
         private System.Windows.Forms.ToolStripMenuItem menuItemEnhancement;
         private System.Windows.Forms.ToolStripMenuItem menuItemMeanFilter;
         private System.Windows.Forms.ToolStripMenuItem menuItemGaussianFilter;
         private System.Windows.Forms.ToolStripSeparator toolStripSeparator5;
         private System.Windows.Forms.ToolStripMenuItem menuItemLaplacian;
         private System.Windows.Forms.ToolStripMenuItem menuItemSobelEdge;
+        private System.Windows.Forms.ToolStripMenuItem menuItemCannyEdge;
         private System.Windows.Forms.ToolStripSeparator toolStripSeparator6;
         private System.Windows.Forms.ToolStripMenuItem menuItemDensitySlice;
         private System.Windows.Forms.ToolStripMenuItem menuItemClassification;

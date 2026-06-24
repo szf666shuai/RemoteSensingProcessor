@@ -97,5 +97,73 @@ namespace RemoteSensingProcessor.BLL
             float weight = position - lowerIndex;
             return sorted[lowerIndex] * (1 - weight) + sorted[upperIndex] * weight;
         }
+
+        public static (float min, float max) GetValidPercentileRange(float[] data, float lowerPercent = 0.02f, float upperPercent = 0.98f)
+        {
+            int count = 0;
+            foreach (float v in data)
+            {
+                if (!float.IsNaN(v) && !float.IsInfinity(v))
+                    count++;
+            }
+            if (count == 0) return (0f, 1f);
+
+            float[] valid = new float[count];
+            int i = 0;
+            foreach (float v in data)
+            {
+                if (!float.IsNaN(v) && !float.IsInfinity(v))
+                    valid[i++] = v;
+            }
+            Array.Sort(valid);
+            float min = Percentile(valid, lowerPercent);
+            float max = Percentile(valid, upperPercent);
+            if (max <= min) max = min + 1e-6f;
+            return (min, max);
+        }
+
+        public static bool IsAnyBandNoData(float[][] bands, int pixelIndex, double[] noDataValues)
+        {
+            for (int b = 0; b < bands.Length; b++)
+            {
+                if (IsNoData(bands[b][pixelIndex], noDataValues[b]))
+                    return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// 排除元数据未标记 NoData 的填充区（如 Landsat 条带外全零像素）。
+        /// </summary>
+        public static bool IsInvalidBackgroundPixel(float[][] bands, int pixelIndex, double[] noDataValues)
+            => IsInvalidBackgroundPixelAt(bands, pixelIndex, bands.Length, noDataValues);
+
+        public static bool IsInvalidBackgroundPixelAt(float[][] bands, int pixelIndex, int numBands, double[] noDataValues)
+        {
+            if (IsAnyBandNoData(bands, pixelIndex, noDataValues))
+                return true;
+
+            float sum = 0, max = float.MinValue, min = float.MaxValue;
+            for (int b = 0; b < numBands; b++)
+            {
+                float v = bands[b][pixelIndex];
+                if (float.IsNaN(v) || float.IsInfinity(v))
+                    return true;
+                sum += v;
+                max = Math.Max(max, v);
+                min = Math.Min(min, v);
+            }
+
+            if (max <= 1e-6f)
+                return true;
+
+            if (max <= 0 && max - min <= 1e-6f)
+                return true;
+
+            if (numBands >= 3 && sum <= 1e-6f)
+                return true;
+
+            return false;
+        }
     }
 }

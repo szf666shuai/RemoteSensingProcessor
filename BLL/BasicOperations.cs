@@ -163,53 +163,50 @@ namespace RemoteSensingProcessor.BLL
         
         private Bitmap CreateGrayscaleBitmapWithBlockRead(ImageInfo info, int bandIndex)
         {
-            Bitmap bitmap = new(info.Width, info.Height, PixelFormat.Format8bppIndexed);
-            
-            ColorPalette palette = bitmap.Palette;
-            for (int i = 0; i < 256; i++)
-                palette.Entries[i] = Color.FromArgb(i, i, i);
-            bitmap.Palette = palette;
-            
+            Bitmap bitmap = new(info.Width, info.Height, PixelFormat.Format24bppRgb);
             var data = bitmap.LockBits(new Rectangle(0, 0, info.Width, info.Height),
-                ImageLockMode.WriteOnly, bitmap.PixelFormat);
-            
+                ImageLockMode.WriteOnly, PixelFormat.Format24bppRgb);
+
             int blockSize = 256;
-            
-            // 获取波段范围用于归一化
             int bandIdx = bandIndex - 1;
             float minVal = (float)info.Bands[bandIdx].MinValue;
             float maxVal = (float)info.Bands[bandIdx].MaxValue;
             float range = maxVal - minVal;
             if (range == 0) range = 1;
-            
+
             unsafe
             {
                 byte* ptr = (byte*)data.Scan0;
                 int stride = data.Stride;
-                
+
                 for (int y = 0; y < info.Height; y += blockSize)
                 {
                     int rows = Math.Min(blockSize, info.Height - y);
                     float[] band = _dal.ReadBandData(info.FilePath, bandIndex, 0, y, info.Width, rows);
-                    
+
                     for (int blockY = 0; blockY < rows; blockY++)
                     {
                         byte* row = ptr + (y + blockY) * stride;
                         for (int x = 0; x < info.Width; x++)
                         {
                             int idx = blockY * info.Width + x;
+                            byte gray;
                             if (BitmapHelper.IsNoData(band[idx], info.Bands[bandIdx].NoDataValue))
+                                gray = 0;
+                            else
                             {
-                                row[x] = 0;
-                                continue;
+                                float normalized = (band[idx] - minVal) / range;
+                                gray = (byte)Math.Clamp(normalized * 255, 0, 255);
                             }
-                            float normalized = (band[idx] - minVal) / range;
-                            row[x] = (byte)Math.Clamp(normalized * 255, 0, 255);
+                            row[x * 3] = gray;
+                            row[x * 3 + 1] = gray;
+                            row[x * 3 + 2] = gray;
                         }
+                        BitmapHelper.ClearRowPadding(row, info.Width, BitmapHelper.RgbBytesPerPixel, stride);
                     }
                 }
             }
-            
+
             bitmap.UnlockBits(data);
             return bitmap;
         }
@@ -395,7 +392,7 @@ namespace RemoteSensingProcessor.BLL
                     byte* srcPtr = (byte*)srcData.Scan0;
                     byte* dstPtr = (byte*)dstData.Scan0;
                     int srcStride = srcData.Stride, dstStride = dstData.Stride;
-                    Parallel.For(0, prepared.Height, y =>
+                    for (int y = 0; y < prepared.Height; y++)
                     {
                         byte* srcRow = srcPtr + y * srcStride;
                         byte* dstRow = dstPtr + y * dstStride;
@@ -406,7 +403,7 @@ namespace RemoteSensingProcessor.BLL
                             dstRow[x * 3 + 2] = luts[2][srcRow[x * 3 + 2]];
                         }
                         BitmapHelper.ClearRowPadding(dstRow, prepared.Width, 3, dstStride);
-                    });
+                    }
                 }
                 prepared.UnlockBits(srcData);
                 result.UnlockBits(dstData);

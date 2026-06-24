@@ -41,6 +41,217 @@ namespace RemoteSensingProcessor.BLL
             finally { if (disposePrepared) prepared.Dispose(); }
         }
 
+        public Bitmap ApplyCannyEdge(Bitmap bitmap, float lowThreshold = 50f, float highThreshold = 150f)
+        {
+            Bitmap prepared = Ensure24bpp(bitmap, out bool disposePrepared);
+            try { return ApplyCannyEdgeCore(prepared, lowThreshold, highThreshold); }
+            finally { if (disposePrepared) prepared.Dispose(); }
+        }
+
+        private Bitmap ApplyCannyEdgeCore(Bitmap bitmap, float lowThreshold, float highThreshold)
+        {
+            int width = bitmap.Width, height = bitmap.Height;
+            float[] gray = ExtractGrayscale(bitmap);
+            float[] blurred = GaussianBlur5x5(gray, width, height);
+
+            float[] magnitude = new float[width * height];
+            float[] direction = new float[width * height];
+            ComputeGradients(blurred, width, height, magnitude, direction);
+
+            float[] suppressed = NonMaxSuppression(magnitude, direction, width, height);
+            byte[] edges = HysteresisThreshold(suppressed, width, height, lowThreshold, highThreshold);
+
+            Bitmap result = new(width, height, PixelFormat.Format24bppRgb);
+            var dstData = result.LockBits(new Rectangle(0, 0, width, height), ImageLockMode.WriteOnly, PixelFormat.Format24bppRgb);
+            unsafe
+            {
+                byte* dstPtr = (byte*)dstData.Scan0;
+                int dstStride = dstData.Stride;
+                Parallel.For(0, height, y =>
+                {
+                    byte* dstRow = dstPtr + y * dstStride;
+                    for (int x = 0; x < width; x++)
+                    {
+                        byte v = edges[y * width + x];
+                        dstRow[x * 3] = v;
+                        dstRow[x * 3 + 1] = v;
+                        dstRow[x * 3 + 2] = v;
+                    }
+                    BitmapHelper.ClearRowPadding(dstRow, width, 3, dstStride);
+                });
+            }
+            result.UnlockBits(dstData);
+            return result;
+        }
+
+        private static float[] ExtractGrayscale(Bitmap bitmap)
+        {
+            int width = bitmap.Width, height = bitmap.Height;
+            float[] gray = new float[width * height];
+            var srcData = bitmap.LockBits(new Rectangle(0, 0, width, height), ImageLockMode.ReadOnly, PixelFormat.Format24bppRgb);
+            unsafe
+            {
+                byte* srcPtr = (byte*)srcData.Scan0;
+                int stride = srcData.Stride;
+                for (int y = 0; y < height; y++)
+                {
+                    byte* row = srcPtr + y * stride;
+                    for (int x = 0; x < width; x++)
+                    {
+                        byte b = row[x * 3], g = row[x * 3 + 1], r = row[x * 3 + 2];
+                        gray[y * width + x] = 0.299f * r + 0.587f * g + 0.114f * b;
+                    }
+                }
+            }
+            bitmap.UnlockBits(srcData);
+            return gray;
+        }
+
+        private static float[] GaussianBlur5x5(float[] src, int width, int height)
+        {
+            float[,] kernel =
+            {
+                { 1, 4, 7, 4, 1 },
+                { 4, 16, 26, 16, 4 },
+                { 7, 26, 41, 26, 7 },
+                { 4, 16, 26, 16, 4 },
+                { 1, 4, 7, 4, 1 }
+            };
+            const float norm = 1f / 273f;
+            float[] dst = new float[width * height];
+            int half = 2;
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    float sum = 0;
+                    for (int ky = -half; ky <= half; ky++)
+                    {
+                        for (int kx = -half; kx <= half; kx++)
+                        {
+                            int px = Math.Clamp(x + kx, 0, width - 1);
+                            int py = Math.Clamp(y + ky, 0, height - 1);
+                            sum += src[py * width + px] * kernel[ky + half, kx + half];
+                        }
+                    }
+                    dst[y * width + x] = sum * norm;
+                }
+            }
+            return dst;
+        }
+
+        private static void ComputeGradients(float[] src, int width, int height, float[] magnitude, float[] direction)
+        {
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    float gx = -src[Clamp(y - 1, height) * width + Clamp(x - 1, width)]
+                        - 2 * src[y * width + Clamp(x - 1, width)]
+                        - src[Clamp(y + 1, height) * width + Clamp(x - 1, width)]
+                        + src[Clamp(y - 1, height) * width + Clamp(x + 1, width)]
+                        + 2 * src[y * width + Clamp(x + 1, width)]
+                        + src[Clamp(y + 1, height) * width + Clamp(x + 1, width)];
+                    float gy = -src[Clamp(y - 1, height) * width + Clamp(x - 1, width)]
+                        - 2 * src[Clamp(y - 1, height) * width + x]
+                        - src[Clamp(y - 1, height) * width + Clamp(x + 1, width)]
+                        + src[Clamp(y + 1, height) * width + Clamp(x - 1, width)]
+                        + 2 * src[Clamp(y + 1, height) * width + x]
+                        + src[Clamp(y + 1, height) * width + Clamp(x + 1, width)];
+                    int idx = y * width + x;
+                    magnitude[idx] = MathF.Sqrt(gx * gx + gy * gy);
+                    direction[idx] = MathF.Atan2(gy, gx);
+                }
+            }
+
+            static int Clamp(int v, int max) => Math.Clamp(v, 0, max - 1);
+        }
+
+        private static float[] NonMaxSuppression(float[] magnitude, float[] direction, int width, int height)
+        {
+            float[] result = new float[width * height];
+            for (int y = 1; y < height - 1; y++)
+            {
+                for (int x = 1; x < width - 1; x++)
+                {
+                    int idx = y * width + x;
+                    float angle = direction[idx] * 180f / MathF.PI;
+                    if (angle < 0) angle += 180;
+
+                    float q, r;
+                    if (angle < 22.5f || angle >= 157.5f)
+                    {
+                        q = magnitude[idx + 1];
+                        r = magnitude[idx - 1];
+                    }
+                    else if (angle < 67.5f)
+                    {
+                        q = magnitude[(y + 1) * width + (x + 1)];
+                        r = magnitude[(y - 1) * width + (x - 1)];
+                    }
+                    else if (angle < 112.5f)
+                    {
+                        q = magnitude[(y + 1) * width + x];
+                        r = magnitude[(y - 1) * width + x];
+                    }
+                    else
+                    {
+                        q = magnitude[(y + 1) * width + (x - 1)];
+                        r = magnitude[(y - 1) * width + (x + 1)];
+                    }
+
+                    result[idx] = magnitude[idx] >= q && magnitude[idx] >= r ? magnitude[idx] : 0;
+                }
+            }
+            return result;
+        }
+
+        private static byte[] HysteresisThreshold(float[] src, int width, int height, float low, float high)
+        {
+            byte[] result = new byte[width * height];
+            var strong = new bool[width * height];
+            var weak = new bool[width * height];
+
+            for (int i = 0; i < src.Length; i++)
+            {
+                if (src[i] >= high) strong[i] = true;
+                else if (src[i] >= low) weak[i] = true;
+            }
+
+            var queue = new Queue<(int x, int y)>();
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    int idx = y * width + x;
+                    if (strong[idx])
+                    {
+                        result[idx] = 255;
+                        queue.Enqueue((x, y));
+                    }
+                }
+            }
+
+            int[] dx = { -1, 0, 1, -1, 1, -1, 0, 1 };
+            int[] dy = { -1, -1, -1, 0, 0, 1, 1, 1 };
+            while (queue.Count > 0)
+            {
+                var (cx, cy) = queue.Dequeue();
+                for (int d = 0; d < 8; d++)
+                {
+                    int nx = cx + dx[d], ny = cy + dy[d];
+                    if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+                    int nidx = ny * width + nx;
+                    if (weak[nidx] && result[nidx] == 0)
+                    {
+                        result[nidx] = 255;
+                        queue.Enqueue((nx, ny));
+                    }
+                }
+            }
+            return result;
+        }
+
         private Bitmap ApplySobelEdgeCore(Bitmap bitmap)
         {
             int width = bitmap.Width, height = bitmap.Height;
